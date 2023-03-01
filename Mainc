@@ -1,0 +1,591 @@
+//Programa funciona para 12F1822 ou no 12F1572
+//Mudar no Projeto tambem.
+//#define USE_PIC12f1840
+#define USE_PIC12f1822
+//#define USE_PIC12f1572
+
+
+#ifdef USE_PIC12f1840
+#include <pic12f1840.h>
+#endif
+
+#ifdef USE_PIC12f1822
+#include <pic12f1822.h>
+#endif
+
+#ifdef USE_PIC12f1572
+#include <pic12f1572.h>
+#endif
+
+#include "main_rede.h"
+
+/*
+pacotes_sensores[0]->0b01000000;
+pacotes_sensores[1]->0b00000000;
+pacotes_sensores[2]->0b00000000;
+pacotes_sensores[3]->0b00000000;
+pacotes_sensores[4]->0b10000000;
+
+ bits 0 0 0 0 0 0 0 0
+      | | | | | | | |
+      | | | | | | | +-> Sensor 1, ...
+      | | | | | | +---> Sensor 2, ...
+      | | | | | +-----> Sensor 3, ...
+      | | | | +-------> Sensor 4, ...
+      | | | +---------> Sensor 5, ...
+      | | +-----------> Sensor 6, ...
+      | +-------------> Bit id pacotes_sensores[0]
+      +---------------> Bit id pacotes_sensores[5]
+
+  /*/
+
+
+void ADC_result() {
+    //ADCON0bits.GO = 1; // ADC start conversion
+    ADCON0bits.GO_nDONE = 1; // ADC start conversion
+    while (ADCON0bits.GO_nDONE); // wait for conversion done
+}
+
+void ADC_set() // configura adc
+{
+    ANSELAbits.ANSA1 = 1; // Analog input on PIN RA2
+    ADCON0bits.CHS = 0b01; // Analog channel RA1
+    ADCON1bits.ADFM = 0; // ADC set to ADRESL
+    ADCON0bits.ADON = 1; // ADC enabled
+    ADCON1bits.ADPREF = 1;
+    ADCON1bits.ADCS = 0b010; // ADC conversion clock select as FRC 0b11 Fosc/16 101 / Fosc/8 001 / Fosc/32 010. TADS.
+    
+}
+
+void definePacotePadrao(void) {
+    /*
+    for (char index = 0; index < QTD_PACOTES; index++) {
+        switch (index) {
+            case 0:
+                pacotes_sensores[index] = BYTE_INICIAL;
+                break;
+            case (QTD_PACOTES - 1):
+                pacotes_sensores[index] = BYTE_FINAL;
+                break;
+            default:
+                pacotes_sensores[index] = BYTE_MEDIANO;
+        }
+    }
+     * */
+    pacotes_sensores[0] = BYTE_MEDIANO;
+    // __delay_ms(3000);
+}
+
+void clear_usart_receiver(void) {
+    char c;
+    while (RCIF) {
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+        c = RCREG;
+    }
+}
+
+/****************************************************************************************\
+ * Rotina : envia_byte                                                                                              *
+ *
+ * Laço que envia os 10 bytes na matriz pacote_sensores na UART.
+ *
+ * Parâmetros: void                                                                                                                                *
+ * Retorno   : void                                                                                                                              *
+\****************************************************************************************/
+void envia_byte(char dado) {
+    TXREG = dado; // TXREG carga com dados
+    while (TXSTAbits.TRMT == 0) {
+
+    } // esperar aqui até transmitir completo
+}
+
+/****************************************************************************************\
+ * Rotina : envia_bytes                                                                                                                        *
+ *
+ * Laço que envia os 10 bytes na matriz pacote_sensores na UART.
+ *
+ * Parâmetros: void                                                                                                                                *
+ * Retorno   : void                                                                                                                              *
+\****************************************************************************************/
+void envia_rede(void) {// laço que envia os 5 bytes na UART.
+    char aa;
+    NOP();
+    NOP();
+    NOP();
+    for (char pack = 0; pack < QTD_PACOTES; pack++) {
+
+        envia_byte(pacotes_sensores[pack]);
+        __delay_us(10); // 10
+
+    }
+
+}
+
+void config_uart1(void) {
+
+    TXCKSEL = 0;
+    RXDTSEL = 1;
+    //cUART_data_flg = 0; // Dados de inicialização receber bandeira para zero (sem dados)
+    TRISA1 = 1; // Faz entrada pin UART RX
+    TRISA0 = 0; // Faz UART TX saída pin
+    SPBRGH = 0x03; // 8000bps 16MHz Osc
+    SPBRGL = 0xe7;
+    //SPBRGL = 0xA0;
+
+    CREN = 1; // 1 = Ativa receiver
+    SPEN = 1; // 1 = Porta Serial habilitado (configura RX / DT e TX / pinos CK como pinos da porta serial)
+    BRG16 = 1; // Taxa de transmissão Gerador 1 = 16-bit? SPBRGH e SPBRG
+
+    SYNC = 0; // 0 = modo assíncrono
+    BRGH = 1; // 1 = alta velocidade
+    TXEN = 1; // 1 = Transmit habilitado
+
+    RCIE = 1; // 1 = Ativa a EUSART receber interromper
+    PEIE = 1;
+
+}
+
+/*******************************************************************************
+ * ini_int0
+ * Inicializa int0 do Semente.
+ * Parâmetros: void
+ * Retorno   : void
+\******************************************************************************/
+void ini_int0(void) {
+    //INTCONbits.INTE = 1;
+    //INTEDG = INT_DEC;
+}
+
+/*******************************************************************************
+ * ini_timer1
+ * Inicializa timer 1 - Responsavel por verificar a posicao na rede - 65ms
+ * Parâmetros: void
+ * Retorno   : void
+\******************************************************************************/
+void ini_timer1(void) {
+    //unsigned char config;
+    T1CONbits.TMR1CS = 0;
+    T1CONbits.T1CKPS = 3;
+
+    PIE1bits.TMR1IE = 1;
+    //INTCONbits.PEIE = 1;
+
+    LIGA_TIMER1 = 0; //Deixa Desligado até configurar Rede.
+    GIE = 0; //força ficar desligado o Global.
+    F_TIMER1 = 0;
+}
+
+/*******************************************************************************
+ * ini_timer2
+ * Inicializa timer 2 - Responsavel por verificar a posicao na rede - 65ms
+ * Parâmetros: void
+ * Retorno   : void
+\******************************************************************************/
+void ini_timer2(void) {
+
+    //Postscaler
+    T2CONbits.T2OUTPS = 0b00001100; //postcaler de 14 vezes para chegar em 30ms
+
+    //Prescaler
+    T2CONbits.T2CKPS = 3; //maximo de prescaler
+
+    LIGA_TIMER2 = 1;
+    PIE1bits.TMR2IE = 1;
+
+    GIE = 0; //força ficar desligado o Global.
+    F_TIMER2 = 0;
+}
+
+/**
+ * @minha rotina de delay
+ * funcao de delay que não segura o processador 
+ *  * @param tempo - tempo em ms.
+ */
+void my_delay(long tempo) {
+    tempo *= 100;
+    for (long i = 0; i < tempo; i++) {
+        __delay_us(10);
+    }
+}
+
+void my_delay2(long tempo) {
+    tempo *= 100;
+    for (long i = 0; i < tempo; i++) {
+        __delay_us(10);
+    }
+}
+
+void preparaPacoteSemente(int32 pacotao1) {
+    /*
+    // converte pacotes(8bits) em um pacotao de 32bits(sem bits de indentificação dos pacotes)
+    pacotao1 = ((int32) pacotes_sensores[4] << 24);;
+    pacotao1 |= ((int32) pacotes_sensores[3] << 18);
+    pacotao1 |= ((int32) pacotes_sensores[2] << 12);
+    pacotao1 |= ((int32) pacotes_sensores[1] << 6);
+    pacotao1 |= ((int32) pacotes_sensores[0] & MASK_SENSORES);
+    
+    semente = 0; // decrementa o buffer de semente.
+    pilhaSemente = PILHASEMENTE;
+    if (posicao <= 30)
+        pacotao1 = pacotao1 | ((int32) 1 << (posicao - 1)); // set o bit do sensor com semente).
+
+
+    //converte o pacotao(32bits) em pacotes(8bits)para transmissão(ja com bits de indentificação dos pacotes).
+    pacotes_sensores[4] = (char) (pacotao1 >> 24); //não precisa colocar mascara, já esta na variavel destino
+    pacotes_sensores[3] = (char) (pacotao1 >> 18 & MASK_SENSORES);
+    pacotes_sensores[2] = (char) (pacotao1 >> 12 & MASK_SENSORES);
+    pacotes_sensores[1] = (char) (pacotao1 >> 6 & MASK_SENSORES);
+    pacotes_sensores[0] = ((char) (pacotao1 & MASK_SENSORES)) | BYTE_INICIAL;
+     * */
+
+
+    //if (posicao <= 8)
+    //  pacotao1 = pacotao1 | ((int32) 1 << (posicao - 1)); // set o bit do sensor com semente).
+    if (posicao != 1) {
+        pacotao1 = RCREG; //Le Uart.
+        pacotao1 = pacotao1 << 1u;
+    }
+
+    pacotes_sensores[0] = pacotao1 & 0xFF;
+    pacotes_sensores[0] |= erro_trava & 0x1;
+
+
+    //converte o pacotao(32bits) em pacotes(8bits)para transmissão(ja com bits de indentificação dos pacotes).
+    //        pacotes_sensores[9] = (char) (pacotao2 >> 24); //não precisa colocar mascara, já esta na variavel destino
+    //        pacotes_sensores[8] = (char) (pacotao2 >> 18 & MASK_SENSORES);
+    //        pacotes_sensores[7] = (char) (pacotao2 >> 12 & MASK_SENSORES);
+    //        pacotes_sensores[6] = (char) (pacotao2 >> 6 & MASK_SENSORES);
+    //        pacotes_sensores[5] = ((char) (pacotao2 & MASK_SENSORES));
+}
+
+/****************************************************************************************\
+ * Rotina : trata_uart                                                                                                                        *
+ *
+ * trata os dados recebido setando o status semente no bit corresponde ao sensor.
+ *
+ * Parâmetros: void                                                                                                                                 *
+ * Retorno   : void                                                                                                                       *
+\****************************************************************************************/
+void trata_uart(void) {
+
+    int32 pacoteM = 0; //4 Bytes = 24 sensores -> 1 ao 30
+    //int32 pacotao2 = 0; //4 Bytes = 24 sensores -> 25 ao 60
+    //Rotina de teste
+    //NOP();
+    //posicao = 2;
+    //while (1) {
+    //s-emente = 1;
+
+    preparaPacoteSemente(pacoteM);
+    //if (pilhaSensorParado == 0) {
+    //   if (erro_trava == 1)preparaPacoteSemente(pacoteM);
+    //} else if (pilhaSemente == 0) {
+    //    if (semente == erro_trava) { //             COMENTEI 22-11
+
+    //        preparaPacoteSemente(pacoteM);
+    //    }
+    //}
+    //__delay_ms(3000);
+    //envia_rede();
+    envia_byte(pacotes_sensores[0]);
+}
+
+void func_adc() {
+    ADC_result();
+    conversor = ADRESH;
+    if ((conversor - auxiliar) > valor_erro) {
+        erro_trava = 1;
+        memoria_erro = conversor; // grava erro atual.
+    } else if (conversor < memoria_erro && erro_trava == 1) {
+        erro_trava = 0;
+    }
+    auxiliar = conversor;
+}
+
+void interrupt interrupcoes() {
+    if (F_TIMER1) {
+        F_TIMER1 = 0;
+        static char conta = 0;
+
+
+        if (F_inicializacao) {
+            conta++;
+            DEBUG = ~DEBUG;
+
+            if (conta > 12) { //entra se é o primeiro sensor(sem resposta do prox).
+                F_start = 0;
+                posicao = 1;
+                //LIGA_TIMER1 = 0; //Desliga timer1.
+                F_TIMER1 = 0;
+                F_inicializacao = 0;
+                // DEBUG = 0;
+                conta = 0;
+                //my_delay2(3000);
+            }
+
+        } else { // timer de entupimento
+            //            if (pilhaSemente > 0)pilhaSemente--; // decremente a pilha de sementes
+            if (pilhaSensorParado > 0 && erro_trava == 1)pilhaSensorParado--; // INT_SUB decremente a pilha do sensor parado
+            //if (pilhaSensorParado > 0 && INTSEMENTE == erro_trava)pilhaSensorParado--; // INT_SUB decremente a pilha do sensor parado
+        }
+    }
+    if (F_TIMER2) {
+        F_TIMER2 = 0;
+
+        if (F_libera1Sensor) {
+            definePacotePadrao();
+
+
+            if (pilhaSensorParado == 0) {
+
+
+                if (erro_trava == 1) {
+                    // pacotes_sensores[0] = BYTE_INICIAL | 0b00000001; // seta bit do sensor 1.
+                    pacotes_sensores[0] = 0b00000001; // seta bit do sensor 1.
+                }
+                //                else{
+                //                    pilhaSensorParado = PILHASENSOR;
+                //                }
+            } else if (pilhaSemente == 0) {
+                if (erro_trava == 0) {
+                    semente = 0;
+
+                    pilhaSemente = PILHASEMENTE;
+                    pacotes_sensores[0] = 0b00000001; // seta bit do sensor 1.
+                    // pacotes_sensores[0] = BYTE_INICIAL | 0b00000001; // seta bit do sensor 1.
+                }
+            }
+            //Seta bit do 1ºSensor no pack0 caso tenha semente .
+            //            if (semente > 0) {
+            //
+            //                semente--; // descrementa o buffer de sementes
+            //                pacotes_sensores[0] = BYTE_INICIAL | 0b00000001; // seta bit do sensor 1.
+            //            }
+            NOP();
+            NOP();
+            NOP();
+
+            envia_rede(); // Envia Pacote na rede.
+
+        }
+    }
+
+    if (F_UART) {
+        F_UART = 0;
+
+        if (F_sincronismo) {
+
+            //char Recebido = RCREG;
+            //UART_putc(Recebido);
+            //char pacote = 0;
+            static char id_pacote = 0;
+
+            char pacote = RCREG; //Le Uart.
+
+            //define identificação do pacote atraves do comparação dos bits de posicao.
+            //  if ((pacote & BYTE_INICIAL) > 0) id_pacote = 0;
+            //  else if ((pacote & BYTE_FINAL) > 0) id_pacote = (QTD_PACOTES - 1);
+            //  else id_pacote++;
+
+            //não deixa estourar o index do vetor.
+            pacotes_sensores[0] = pacote;
+            //if (id_pacote < QTD_PACOTES - 1)pacotes_sensores[id_pacote] = pacote; //armazena pacote na sua posicao.
+            //else {
+            //    id_pacote = 0;
+            //   //DEBUG = ~DEBUG;
+            F_buffer = 1; // buffer completo, libera a manipulacao e envio.
+            //   //my_delay2(3000);
+            //}
+        } else { //ainda não sincronizado
+            char temp = RCREG;
+            if (temp != 255) {
+                F_sincronismo = 1; //recebi Sincronismo, Não sou 1º
+                posicao = temp + 1;
+                F_start = 0; //sair do loop.
+            }
+            //LIGA_TIMER1 = 0; //Desliga timer1.
+            F_inicializacao = 0; // Desliga timer do Sensor definicao do sensores.
+        }
+        // my_delay2(3000);
+    }
+    if (F_INT) { //F_INT
+        F_INT = 0;
+        //
+        //        if (INTSEMENTE == INT_DEC) { //INT_DEC
+        //
+        //            INTSEMENTE = INT_SUB;
+        //        } else {
+        //            if (semente < 200 && pilhaSensorParado > 0) semente++;
+        //            pilhaSensorParado = PILHASENSOR;
+        //            INTSEMENTE = INT_DEC;
+        //        }
+        //        //
+        //        //        pilhaSensorParado = PILHASENSOR;
+        //        //
+        //        //        if (semente < 200) semente++;
+        //        //        NOP();
+        //        //        NOP();
+        //        //        NOP();
+        //    }
+        if (IOCAF4) {
+            IOCAF4 = 0;
+            semente = 1;
+            NOP();
+            NOP();
+            NOP();
+        }
+        //
+    }
+}
+
+void adc_converter() {
+    ADC_result();
+    conversor = ADRESH;
+    if ((conversor - auxiliar) > valor_erro) {
+        erro_trava = 1;
+        memoria_erro = conversor; // grava erro atual.
+    } else if (conversor < memoria_erro && erro_trava == 1) {
+        erro_trava = 0;
+    }
+    auxiliar = conversor;
+}
+
+void main() {
+
+    OSCCON = 0b11110000; //
+    //OSCCON = 0b11110010; // 32Mhz interno
+    //OSCCON = 0b01111010; // 16Mhz - interno
+
+    //inicializa vetor dos pacotes.
+    pilhaSensorParado = PILHASENSOR;
+    TRISAbits.TRISA2 = 1;
+    ANSELAbits.ANSA2 = 0;
+    TRISAbits.TRISA0 = 0;
+    TRISAbits.TRISA4 = 0;
+    //    IOCAN4 = 1;
+    //    IOCIE = 1;
+    ANSELA = 0; //off todos analogicos
+    //DEBUG = 0;
+    TRISAbits.TRISA2 = 1; // I/O RA2 input
+    TRISAbits.TRISA4 = 0; // I/O RA4 LED
+    CM1CON0bits.C1ON = 0; // Disable Comaprator
+    CM1CON1bits.C1INTP = 0;
+
+    //__delay_ms(1000);// tirar
+    //DEBUG = 0;
+
+    config_uart1();
+    GIE = 0;
+    ini_timer1();
+    ini_timer2();
+    ini_int0();
+
+    definePacotePadrao();
+    my_delay(200);
+    clear_usart_receiver();
+    my_delay(300);
+
+    ei();
+    LIGA_TIMER1 = 1; //rotina de definir posicao por tempo sem resposta.
+    LIGA_TIMER2 = 1; //liga timer do Sensor Master.
+    envia_byte(255); //Envia mensagem para definir quer é o primeiro
+    my_delay(100);
+    envia_byte(255); //Envia mensagem para definir quer é o primeiro
+    my_delay(100);
+    envia_byte(255); //Envia mensagem para definir quer é o primeiro
+    ADC_set();
+    
+   
+
+    //delay_ms(10);
+    while (F_start) { // Envia 255 e aguarda Timer Fechar.
+    }
+    //DEBUG = 0;
+
+    envia_byte(posicao); //envia posicao pra o prox sensor.
+
+    //LIGA_TIMER1 = 0; //Desliga timer1.
+    //F_UART = 0; // Limpa Interrupção Serial.
+
+    //ext_int_edge(L_TO_H); // Sets up EXT
+    //interrupcao_on(INT_EXT); //liga Interupção de Semente
+
+    if (posicao == 1) {
+        __delay_ms(1000); //Aguarda Restante da rede configurar.
+        F_libera1Sensor = 1;
+        //interrupcao_on(INT_TIMER0); // Liga timer debug de sementes
+
+        while (1) {
+            NOP(); // Tudo é executado dentro das interrupções.
+
+            //funcao_conversor3();
+            //*****************************************************************************               
+            ADC_result();
+            conversor =  (ADRESH << 8) + ADRESL;
+            //conversor = conversor * 2;
+            // envia_byte(conversor);
+            if ((conversor - auxiliar) > valor_erro) {
+                erro_trava = 1;
+                memoria_erro = conversor; // grava erro atual.
+                // DEBUG = 0;
+            } else if (conversor < memoria_erro - valor_certo && erro_trava == 1) {
+                erro_trava = 0;
+                //memoria_erro = conversor;
+                //DEBUG = 1;
+
+            }
+            auxiliar = conversor;
+            my_delay2(Tempo_Resp);
+            conversor = 0;
+            clear_usart_receiver();
+        }
+        //my_delay2(3000);
+    } else {
+
+
+        //LIGA_TIMER1 = 0; // Desliga timer do Sensor definicao do sensores.
+        F_inicializacao = 0; // Desliga timer do Sensor definicao do sensores.
+        LIGA_TIMER2 = 0; // Desliga timer do Sensor Master.
+        LIGA_UART = 1; //liga interrupcao serial
+        //interrupcao_on(INT_TIMER0); // Liga timer debug de sementes
+
+        while (1) {
+
+            NOP();
+            if (F_buffer) {
+                ADC_result();
+                conversor =  (ADRESH << 8) + ADRESL;
+                //conversor = conversor * 2;
+                if ((conversor - auxiliar) > valor_erro) {
+                    erro_trava = 1;
+                    memoria_erro = conversor; // grava erro atual.
+                } else if (conversor < memoria_erro - valor_certo && erro_trava == 1) {
+                    erro_trava = 0;
+                    //  memoria_erro = conversor;
+                }
+                //my_delay(30);
+                // my_delay2(3000);
+                auxiliar = conversor;
+                trata_uart();
+                F_buffer = 0;
+                my_delay2(Tempo_Resp);
+                conversor = 0;
+                clear_usart_receiver();
+            }
+        }
+    }
+    //my_delay2(3000);
+    //__delay_ms(3000);
+}
